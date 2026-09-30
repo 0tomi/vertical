@@ -1,7 +1,8 @@
 /**
  * vertical — Vertical subagent communication plugin for OpenCode v2
  *
- * Enables bidirectional parent-child messaging between subagents and supervisors:
+ * Enables bidirectional parent-child messaging between subagents and supervisors
+ * through silent synthetic channels (invisible to human chat UI):
  * - `notify_parent`: child subagents send blockers, questions, or updates to their supervisor.
  * - `steer`: supervisors inject guidance or answers into running subagents mid-flight.
  */
@@ -28,6 +29,7 @@ const NOTIFY_PARENT_INSTRUCTION = `## Vertical Agent Communication
 Subagents can communicate with their direct parent supervisor:
 - If you are a subagent and need guidance, clarification, or encounter a blocker, call \`notify_parent(message="...")\`.
 - Supervisors can redirect or instruct a running subagent mid-flight using \`steer(sessionID="...", message="...")\`.
+- All communication is routed through a dedicated synthetic channel that does not pollute the human chat.
 `
 
 export function createVerticalPlugin(config: VerticalPluginConfig = {}) {
@@ -36,13 +38,31 @@ export function createVerticalPlugin(config: VerticalPluginConfig = {}) {
   return {
     id: "vertical",
     async setup(ctx: any) {
+      // Helper to deliver messages silently via synthetic channel
+      async function deliverSilentMessage(targetSessionID: string, text: string) {
+        if (ctx.session?.synthetic) {
+          return await ctx.session.synthetic({
+            sessionID: targetSessionID,
+            text,
+            delivery: "steer",
+            resume: true,
+          })
+        }
+        // Fallback for runtimes without synthetic endpoint
+        return await ctx.session?.prompt?.({
+          sessionID: targetSessionID,
+          text,
+          delivery: "steer",
+        })
+      }
+
       // Register custom tools
       if (ctx.tool?.transform) {
         await ctx.tool.transform((registry: any) => {
           registry.add({
             name: "notify_parent",
             description:
-              "Send an urgent question, blocker, or material update to your direct supervisor parent agent while continuing execution. The parent receives your message and can reply using steer.",
+              "Send an urgent question, blocker, or material update to your direct supervisor parent agent while continuing execution. Delivered silently via a synthetic channel without cluttering the user chat.",
             input: {
               type: "object",
               properties: {
@@ -83,13 +103,9 @@ export function createVerticalPlugin(config: VerticalPluginConfig = {}) {
                   "</child-notification>",
                 ].join("\n")
 
-                await ctx.session?.prompt?.({
-                  sessionID: parentID,
-                  text: notification,
-                  delivery: "steer",
-                })
+                await deliverSilentMessage(parentID, notification)
 
-                return `✅ Notification delivered to parent supervisor (${parentID}).`
+                return `✅ Notification delivered silently to parent supervisor (${parentID}).`
               } catch (err: any) {
                 return `❌ Failed to notify parent: ${err instanceof Error ? err.message : String(err)}`
               }
@@ -99,7 +115,7 @@ export function createVerticalPlugin(config: VerticalPluginConfig = {}) {
           registry.add({
             name: "steer",
             description:
-              "Send intermediate guidance, additional context, or course corrections to a running subagent session without terminating it.",
+              "Send intermediate guidance, additional context, or course corrections to a running subagent session without terminating it or cluttering user chat.",
             input: {
               type: "object",
               properties: {
@@ -124,13 +140,9 @@ export function createVerticalPlugin(config: VerticalPluginConfig = {}) {
 
               try {
                 const text = `${steerPrefix} ${trimmedMessage}`
-                await ctx.session?.prompt?.({
-                  sessionID: targetSessionID,
-                  text,
-                  delivery: "steer",
-                })
+                await deliverSilentMessage(targetSessionID, text)
 
-                return `✅ Steer instruction delivered to subagent ${targetSessionID}.`
+                return `✅ Steer instruction delivered silently to subagent ${targetSessionID}.`
               } catch (err: any) {
                 return `❌ Failed to steer subagent: ${err instanceof Error ? err.message : String(err)}`
               }

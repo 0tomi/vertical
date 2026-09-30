@@ -4,13 +4,21 @@ Bidirectional vertical subagent communication plugin for [OpenCode v2](https://g
 
 ## Why Vertical?
 
-OpenCode v2 features native subagent execution, but communication is strictly synchronous and unidirectional: a parent spawns a subagent, and waits for it to complete (or launches it in the background to receive a notification upon completion).
+OpenCode v2 features native subagent execution, but communication is strictly synchronous and unidirectional: a parent spawns a subagent and waits for it to complete (or launches it in the background to receive a notification upon completion).
 
 In complex multi-agent architectures, agents need **vertical communication**:
 - **Child agents** hit ambiguities, edge cases, or permission blockers and need to ask their parent supervisor for clarification mid-execution.
 - **Parent supervisors** need to guide, supply missing context, or redirect running subagents on the fly without aborting work or waiting for full turn settlement.
 
-`vertical` unlocks this workflow through OpenCode v2's internal in-flight delivery pipeline (`delivery: "steer"`).
+`vertical` unlocks this workflow through OpenCode v2's **silent synthetic delivery pipeline** (`session.synthetic` with `delivery: "steer"`).
+
+### 🤫 Silent by Design (Zero Chat Clutter)
+
+Unlike naive message injection that posts raw XML blocks as user prompts into the main chat, `vertical` delivers messages directly to the LLM reasoning loop through synthetic messages without descriptions. 
+
+This means:
+- The supervisor agent **sees the notification and reacts immediately**.
+- The human user's chat transcript **stays completely clean and unpolluted**.
 
 ---
 
@@ -19,7 +27,7 @@ In complex multi-agent architectures, agents need **vertical communication**:
 ### 1. `notify_parent`
 Called by any subagent running inside a child session:
 - Automatically resolves the parent supervisor's session ID (`parentID`).
-- Formats and delivers a structured `<child-notification>` block directly into the parent's session.
+- Formats and delivers a structured `<child-notification>` block directly into the parent's session via a silent synthetic channel.
 - Allows subagents to escalate questions or blockers without failing the task.
 
 **Signature:**
